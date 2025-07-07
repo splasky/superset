@@ -16,7 +16,7 @@
 # under the License.
 
 # pylint: disable=import-outside-toplevel
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from pytest_mock import MockerFixture
@@ -200,25 +200,25 @@ def test_get_db_engine_spec(mocker: MockerFixture) -> None:
     "dttm,col,database,result",
     [
         (
-            datetime(2023, 1, 1, 1, 23, 45, 600000),
+            datetime(2023, 1, 1, 1, 23, 45, 600000, tzinfo=timezone.utc),
             TableColumn(python_date_format="epoch_s"),
             Database(),
             "1672536225",
         ),
         (
-            datetime(2023, 1, 1, 1, 23, 45, 600000),
+            datetime(2023, 1, 1, 1, 23, 45, 600000, tzinfo=timezone.utc),
             TableColumn(python_date_format="epoch_ms"),
             Database(),
             "1672536225000",
         ),
         (
-            datetime(2023, 1, 1, 1, 23, 45, 600000),
+            datetime(2023, 1, 1, 1, 23, 45, 600000, tzinfo=timezone.utc),
             TableColumn(python_date_format="%Y-%m-%d"),
             Database(),
             "'2023-01-01'",
         ),
         (
-            datetime(2023, 1, 1, 1, 23, 45, 600000),
+            datetime(2023, 1, 1, 1, 23, 45, 600000, tzinfo=timezone.utc),
             TableColumn(column_name="ds"),
             Database(
                 extra=json.dumps(
@@ -233,16 +233,16 @@ def test_get_db_engine_spec(mocker: MockerFixture) -> None:
             "'2023-01-01'",
         ),
         (
-            datetime(2023, 1, 1, 1, 23, 45, 600000),
+            datetime(2023, 1, 1, 1, 23, 45, 600000, tzinfo=timezone.utc),
             TableColumn(),
             Database(sqlalchemy_uri="foo://"),
             "'2023-01-01 01:23:45.600000'",
         ),
         (
-            datetime(2023, 1, 1, 1, 23, 45, 600000),
+            datetime(2023, 1, 1, 1, 23, 45, 600000, tzinfo=timezone.utc),
             TableColumn(type="TimeStamp"),
             Database(sqlalchemy_uri="trino://"),
-            "TIMESTAMP '2023-01-01 01:23:45.600000'",
+            "TIMESTAMP '2023-01-01 01:23:45.600000+00:00'",
         ),
     ],
 )
