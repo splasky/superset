@@ -60,6 +60,7 @@ SQLGLOT_DIALECTS = {
     "ascend": Dialects.HIVE,
     "awsathena": Dialects.ATHENA,
     "bigquery": Dialects.BIGQUERY,
+    "datastore": Dialects.BIGQUERY,  # FIXME:Should change to datastore dialects
     "clickhouse": Dialects.CLICKHOUSE,
     "clickhousedb": Dialects.CLICKHOUSE,
     "cockroachdb": Dialects.POSTGRES,
