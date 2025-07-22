@@ -24,33 +24,24 @@ from datetime import datetime
 from re import Pattern
 from typing import Any, TYPE_CHECKING, TypedDict
 
-import pandas as pd
-from apispec import APISpec
 from apispec.ext.marshmallow import MarshmallowPlugin
 from flask_babel import gettext as __
 from marshmallow import fields, Schema
 from marshmallow.exceptions import ValidationError
-from sqlalchemy import column, func, types
+from sqlalchemy import column, types
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.url import URL
-from sqlalchemy.sql import column as sql_column, select, sqltypes
-from sqlalchemy.sql.expression import table as sql_table
 
 from superset.constants import TimeGrain
-from superset.databases.schemas import encrypted_field_properties, EncryptedString
+from superset.databases.schemas import EncryptedString
 from superset.databases.utils import make_url_safe
 from superset.db_engine_specs.base import BaseEngineSpec, BasicPropertiesType
 from superset.db_engine_specs.exceptions import SupersetDBAPIConnectionError
 from superset.errors import SupersetError, SupersetErrorType
 from superset.exceptions import SupersetException
-from superset.sql.parse import SQLScript, Table
 from superset.superset_typing import ResultSetColumnType
-from superset.utils import core as utils, json
-from superset.utils.hashing import md5_sha_from_str
-
-if TYPE_CHECKING:
-    from sqlalchemy.sql.expression import Select
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +54,8 @@ try:
 except ImportError:
     dependencies_installed = False
 
-try:
-    import pandas_gbq
-
-    can_upload = True
-except ModuleNotFoundError:
-    can_upload = False
-
 if TYPE_CHECKING:
     from superset.models.core import Database  # pragma: no cover
-
 
 logger = logging.getLogger()
 
@@ -135,6 +118,7 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
 
     allows_hidden_cc_in_orderby = True
 
+    supports_dynamic_schema = True
     supports_catalog = supports_dynamic_catalog = supports_cross_catalog_queries = True
 
     # when editing the database, mask this field in `encrypted_extra`
@@ -145,11 +129,7 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     https://www.python.org/dev/peps/pep-0249/#arraysize
     raw_connections bypass the sqlalchemy-datastore query execution context and deal
     with raw dbapi connection directly.
-    If this value is not set, the default value is set to 1, as described here,
-    https://googlecloudplatform.github.io/google-cloud-python/latest/_modules/google/cloud/datastore/dbapi/cursor.html#Cursor
-
-    The default value of 5000 is derived from the sqlalchemy-datastore.
-    https://github.com/googleapis/python-datastore-sqlalchemy/blob/4e17259088f89eac155adc19e0985278a29ecf9c/sqlalchemy_datastore/base.py#L762
+    If this value is not set, the default value is set to 1.
     """
     arraysize = 5000
 
@@ -237,6 +217,7 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     def convert_dttm(
         cls, target_type: str, dttm: datetime, db_extra: dict[str, Any] | None = None
     ) -> str | None:
+        # TODO: Datastore doesn't have date time convert expression
         sqla_type = cls.get_sqla_column_type(target_type)
         if isinstance(sqla_type, types.Date):
             return f"CAST('{dttm.date().isoformat()}' AS DATE)"
@@ -257,156 +238,6 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
             data = [r.values() for r in data]  # type: ignore
         return data
 
-    @staticmethod
-    def _mutate_label(label: str) -> str:
-        """
-        Datastore field_name should start with a letter or underscore and contain only
-        alphanumeric characters. Labels that start with a number are prefixed with an
-        underscore. Any unsupported characters are replaced with underscores and an
-        md5 hash is added to the end of the label to avoid possible collisions.
-
-        :param label: Expected expression label
-        :return: Conditionally mutated label
-        """
-        label_hashed = "_" + md5_sha_from_str(label)
-
-        # if label starts with number, add underscore as first character
-        label_mutated = "_" + label if re.match(r"^\d", label) else label
-
-        # replace non-alphanumeric characters with underscores
-        label_mutated = re.sub(r"[^\w]+", "_", label_mutated)
-        if label_mutated != label:
-            # add first 5 chars from md5 hash to label to avoid possible collisions
-            label_mutated += label_hashed[:6]
-
-        return label_mutated
-
-    @classmethod
-    def _truncate_label(cls, label: str) -> str:
-        """Datastore requires column names start with either a letter or
-        underscore. To make sure this is always the case, an underscore is prefixed
-        to the md5 hash of the original label.
-
-        :param label: expected expression label
-        :return: truncated label
-        """
-        return "_" + md5_sha_from_str(label)
-
-    @classmethod
-    def where_latest_partition(
-        cls,
-        database: Database,
-        table: Table,
-        query: Select,
-        columns: list[ResultSetColumnType] | None = None,
-    ) -> Select | None:
-        if partition_column := cls.get_time_partition_column(database, table):
-            max_partition_id = cls.get_max_partition_id(database, table)
-            query = query.where(
-                column(partition_column) == func.PARSE_DATE("%Y%m%d", max_partition_id)
-            )
-
-        return query
-
-    @classmethod
-    def get_max_partition_id(
-        cls,
-        database: Database,
-        table: Table,
-    ) -> Select | None:
-        # Compose schema from catalog and schema
-        schema_parts = []
-        if table.catalog:
-            schema_parts.append(table.catalog)
-        if table.schema:
-            schema_parts.append(table.schema)
-        schema_parts.append("INFORMATION_SCHEMA")
-        schema = ".".join(schema_parts)
-        # Define a virtual table reference to INFORMATION_SCHEMA.PARTITIONS
-        partitions_table = sql_table(
-            "PARTITIONS",
-            sql_column("partition_id"),
-            sql_column("table_name"),
-            schema=schema,
-        )
-
-        # Build the query
-        query = select(
-            func.max(partitions_table.c.partition_id).label("max_partition_id")
-        ).where(partitions_table.c.table_name == table.table)
-
-        # Compile to Datastore SQL
-        compiled_query = query.compile(
-            dialect=database.get_dialect(),
-            compile_kwargs={"literal_binds": True},
-        )
-
-        # Run the query and handle result
-        with database.get_raw_connection(
-            catalog=table.catalog,
-            schema=table.schema,
-        ) as conn:
-            cursor = conn.cursor()
-            cursor.execute(str(compiled_query))
-            if row := cursor.fetchone():
-                return row[0]
-        return None
-
-    @classmethod
-    def get_time_partition_column(
-        cls,
-        database: Database,
-        table: Table,
-    ) -> str | None:
-        with cls.get_engine(
-            database, catalog=table.catalog, schema=table.schema
-        ) as engine:
-            client = cls._get_client(engine, database)
-            bq_table = client.get_table(f"{table.schema}.{table.table}")
-
-            if bq_table.time_partitioning:
-                return bq_table.time_partitioning.field
-        return None
-
-    @classmethod
-    def get_extra_table_metadata(
-        cls,
-        database: Database,
-        table: Table,
-    ) -> dict[str, Any]:
-        payload = {}
-        partition_column = cls.get_time_partition_column(database, table)
-        with cls.get_engine(
-            database, catalog=table.catalog, schema=table.schema
-        ) as engine:
-            if partition_column:
-                max_partition_id = cls.get_max_partition_id(database, table)
-                sql = cls.select_star(
-                    database,
-                    table,
-                    engine,
-                    indent=False,
-                    show_cols=False,
-                    latest_partition=True,
-                )
-                payload.update(
-                    {
-                        "partitions": {
-                            "cols": [partition_column],
-                            "latest": {partition_column: max_partition_id},
-                            "partitionQuery": sql,
-                        },
-                        "indexes": [
-                            {
-                                "name": "partitioned",
-                                "cols": [partition_column],
-                                "type": "partitioned",
-                            }
-                        ],
-                    }
-                )
-        return payload
-
     @classmethod
     def epoch_to_dttm(cls) -> str:
         return "TIMESTAMP_SECONDS({col})"
@@ -414,61 +245,6 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     @classmethod
     def epoch_ms_to_dttm(cls) -> str:
         return "TIMESTAMP_MILLIS({col})"
-
-    @classmethod
-    def df_to_sql(
-        cls,
-        database: Database,
-        table: Table,
-        df: pd.DataFrame,
-        to_sql_kwargs: dict[str, Any],
-    ) -> None:
-        """
-        Upload data from a Pandas DataFrame to a database.
-
-        Calls `pandas_gbq.DataFrame.to_gbq` which requires `pandas_gbq` to be installed.
-
-        Note this method does not create metadata for the table.
-
-        :param database: The database to upload the data to
-        :param table: The table to upload the data to
-        :param df: The dataframe with data to be uploaded
-        :param to_sql_kwargs: The kwargs to be passed to pandas.DataFrame.to_sql` method
-        """
-        if not can_upload:
-            raise SupersetException(
-                "Could not import libraries needed to upload data to Datastore."
-            )
-
-        if not table.schema:
-            raise SupersetException("The table schema must be defined")
-
-        to_gbq_kwargs = {}
-        with cls.get_engine(
-            database,
-            catalog=table.catalog,
-            schema=table.schema,
-        ) as engine:
-            to_gbq_kwargs = {
-                "destination_table": str(table),
-                "project_id": engine.url.host,
-            }
-
-        # Add credentials if they are set on the SQLAlchemy dialect.
-
-        if creds := engine.dialect.credentials_info:
-            to_gbq_kwargs["credentials"] = (
-                service_account.Credentials.from_service_account_info(creds)
-            )
-
-        # Only pass through supported kwargs.
-        supported_kwarg_keys = {"if_exists"}
-
-        for key in supported_kwarg_keys:
-            if key in to_sql_kwargs:
-                to_gbq_kwargs[key] = to_sql_kwargs[key]
-
-        pandas_gbq.to_gbq(df, **to_gbq_kwargs)
 
     @classmethod
     def _get_client(
@@ -497,45 +273,6 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
             raise SupersetDBAPIConnectionError(
                 "The database credentials could not be found."
             ) from ex
-
-    @classmethod
-    def estimate_query_cost(  # pylint: disable=too-many-arguments
-        cls,
-        database: Database,
-        catalog: str | None,
-        schema: str,
-        sql: str,
-        source: utils.QuerySource | None = None,
-    ) -> list[dict[str, Any]]:
-        """
-        Estimate the cost of a multiple statement SQL query.
-
-        :param database: Database instance
-        :param catalog: Database project
-        :param schema: Database schema
-        :param sql: SQL query with possibly multiple statements
-        :param source: Source of the query (eg, "sql_lab")
-        """
-        extra = database.get_extra(source) or {}
-        if not cls.get_allow_cost_estimate(extra):
-            raise SupersetException("Database does not support cost estimation")
-
-        parsed_script = SQLScript(sql, engine=cls.engine)
-
-        with cls.get_engine(
-            database,
-            catalog=catalog,
-            schema=schema,
-            source=source,
-        ) as engine:
-            client = cls._get_client(engine, database)
-            return [
-                cls.custom_estimate_statement_cost(
-                    cls.process_statement(statement, database),
-                    client,
-                )
-                for statement in parsed_script.statements
-            ]
 
     @classmethod
     def get_default_catalog(cls, database: Database) -> str:
@@ -578,7 +315,7 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
                 )
                 # return {} here, since it will be repopulated when creds are added
                 return set()
-
+            # FIXME: Improve this, this is a prototype
             query = client.query(kind="__namespace__")
             namespaces = list(query.fetch())
             projects = namespaces
@@ -600,51 +337,9 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
 
     @classmethod
     def get_allow_cost_estimate(cls, extra: dict[str, Any]) -> bool:
-        return True
-
-    @classmethod
-    def custom_estimate_statement_cost(
-        cls,
-        statement: str,
-        client: datastore.Client,
-    ) -> dict[str, Any]:
-        """
-        Custom version that receives a client instead of a cursor.
-        """
-        job_config = datastore.QueryJobConfig(dry_run=True)
-        query_job = client.query(statement, job_config=job_config)
-
-        # Format Bytes.
-        # TODO: Humanize in case more db engine specs need to be added,
-        # this should be made a function outside this scope.
-        byte_division = 1024
-        if hasattr(query_job, "total_bytes_processed"):
-            query_bytes_processed = query_job.total_bytes_processed
-            if query_bytes_processed // byte_division == 0:
-                byte_type = "B"
-                total_bytes_processed = query_bytes_processed
-            elif query_bytes_processed // (byte_division**2) == 0:
-                byte_type = "KB"
-                total_bytes_processed = round(query_bytes_processed / byte_division, 2)
-            elif query_bytes_processed // (byte_division**3) == 0:
-                byte_type = "MB"
-                total_bytes_processed = round(
-                    query_bytes_processed / (byte_division**2), 2
-                )
-            else:
-                byte_type = "GB"
-                total_bytes_processed = round(
-                    query_bytes_processed / (byte_division**3), 2
-                )
-
-            return {f"{byte_type} Processed": total_bytes_processed}
-        return {}
-
-    @classmethod
-    def query_cost_formatter(
-        cls, raw_cost: list[dict[str, Any]]
-    ) -> list[dict[str, str]]:
-        return [{k: str(v) for k, v in row.items()} for row in raw_cost]
+        # TODO: I think this can be implemented later
+        # TODO: Implement the cost estimate
+        return False
 
     @classmethod
     def build_sqlalchemy_uri(
@@ -697,99 +392,6 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         properties: BasicPropertiesType,  # pylint: disable=unused-argument
     ) -> list[SupersetError]:
         return []
-
-    @classmethod
-    def parameters_json_schema(cls) -> Any:
-        """
-        Return configuration parameters as OpenAPI.
-        """
-        if not cls.parameters_schema:
-            return None
-
-        spec = APISpec(
-            title="Database Parameters",
-            version="1.0.0",
-            openapi_version="3.0.0",
-            plugins=[ma_plugin],
-        )
-
-        ma_plugin.init_spec(spec)
-        ma_plugin.converter.add_attribute_function(encrypted_field_properties)
-        spec.components.schema(cls.__name__, schema=cls.parameters_schema)
-        return spec.to_dict()["components"]["schemas"][cls.__name__]
-
-    @classmethod
-    def select_star(  # pylint: disable=too-many-arguments
-        cls,
-        database: Database,
-        table: Table,
-        engine: Engine,
-        limit: int = 100,
-        show_cols: bool = False,
-        indent: bool = True,
-        latest_partition: bool = True,
-        cols: list[ResultSetColumnType] | None = None,
-    ) -> str:
-        """
-        Remove array structures from `SELECT *`.
-
-        Datastore supports structures and arrays of structures, eg:
-
-            author STRUCT<name STRING, email STRING>
-            trailer ARRAY<STRUCT<key STRING, value STRING>>
-
-        When loading metadata for a table each key in the struct is displayed as a
-        separate pseudo-column, eg:
-
-            - author
-            - author.name
-            - author.email
-            - trailer
-            - trailer.key
-            - trailer.value
-
-        When generating the `SELECT *` statement we want to remove any keys from
-        structs inside an array, since selecting them results in an error. The correct
-        select statement should look like this:
-
-            SELECT
-              `author`,
-              `author`.`name`,
-              `author`.`email`,
-              `trailer`
-            FROM
-              table
-
-        Selecting `trailer.key` or `trailer.value` results in an error, as opposed to
-        selecting `author.name`, since they are keys in a structure inside an array.
-
-        This method removes any array pseudo-columns.
-        """
-        if cols:
-            # For arrays of structs, remove the child columns, otherwise the query
-            # will fail.
-            array_prefixes = {
-                col["column_name"]
-                for col in cols
-                if isinstance(col["type"], sqltypes.ARRAY)
-            }
-            cols = [
-                col
-                for col in cols
-                if "." not in col["column_name"]
-                or col["column_name"].split(".")[0] not in array_prefixes
-            ]
-
-        return super().select_star(
-            database,
-            table,
-            engine,
-            limit,
-            show_cols,
-            indent,
-            latest_partition,
-            cols,
-        )
 
     @classmethod
     def _get_fields(cls, cols: list[ResultSetColumnType]) -> list[Any]:
