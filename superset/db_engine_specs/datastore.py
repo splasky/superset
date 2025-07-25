@@ -40,6 +40,7 @@ from superset.db_engine_specs.base import BaseEngineSpec, BasicPropertiesType
 from superset.db_engine_specs.exceptions import SupersetDBAPIConnectionError
 from superset.errors import SupersetError, SupersetErrorType
 from superset.exceptions import SupersetException
+from superset.models.core import Database
 from superset.superset_typing import ResultSetColumnType
 from superset.utils import json
 
@@ -446,3 +447,25 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         :return: A list of function names useable in the database
         """
         return ["sum", "avg", "count"]
+
+    @classmethod
+    def get_view_names(  # pylint: disable=unused-argument
+        cls,
+        database: Database,
+        inspector: Inspector,
+        schema: str | None,
+    ) -> set[str]:
+        """
+        Get all the view names within the specified schema.
+
+        Per the SQLAlchemy definition if the schema is omitted the database’s default
+        schema is used, however some dialects infer the request as schema agnostic.
+
+        The Datastore doesn't have a view. Return an empty set.
+
+        :param database: The database to inspect
+        :param inspector: The SQLAlchemy inspector
+        :param schema: The schema to inspect
+        :returns: The view names
+        """
+        return set()
