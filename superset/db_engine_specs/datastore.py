@@ -248,11 +248,7 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         return "TIMESTAMP_MILLIS({col})"
 
     @classmethod
-    def _get_client(
-        cls,
-        engine: Engine,
-        database: Database,  # pylint: disable=unused-argument
-    ) -> datastore.Client:
+    def _get_client(cls, engine: Engine, database: Database) -> datastore.Client:
         """
         Return the Datastore client associated with an engine.
         """
@@ -269,7 +265,7 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
 
         try:
             credentials = google.auth.default()[0]
-            return datastore.Client(credentials=credentials)
+            return datastore.Client(credentials=credentials, database=database)
         except google.auth.exceptions.DefaultCredentialsError as ex:
             raise SupersetDBAPIConnectionError(
                 "The database credentials could not be found."
@@ -304,24 +300,7 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
 
         In Datastore, a catalog is called a "project".
         """
-        engine: Engine
-        with database.get_sqla_engine() as engine:
-            try:
-                client = cls._get_client(engine, database)
-            except SupersetDBAPIConnectionError:
-                logger.warning(
-                    "Could not connect to database to get catalogs due to missing "
-                    "credentials. This is normal in certain circustances, for example, "
-                    "doing an import."
-                )
-                # return {} here, since it will be repopulated when creds are added
-                return set()
-            # FIXME: Improve this, this is a prototype
-            query = client.query(kind="__namespace__")
-            namespaces = list(query.fetch())
-            projects = namespaces
-
-        return {project.key.name or "(default)" for project in projects}
+        return super().get_catalog_names(database, inspector)
 
     @classmethod
     def adjust_engine_params(
