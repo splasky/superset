@@ -136,11 +136,8 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         CONNECTION_DATABASE_PERMISSIONS_REGEX: (
             __(
                 "Unable to connect. Verify that the following roles are set "
-                'on the service account: "Datastore Data Viewer", '
-                '"Datastore Metadata Viewer", "Datastore Job User" '
-                "and the following permissions are set "
-                '"datastore.readsessions.create", '
-                '"datastore.readsessions.getData"'
+                'on the service account: "Cloud Datastore Viewer", '
+                '"Cloud Datastore User", "Cloud Datastore Creator"'
             ),
             SupersetErrorType.CONNECTION_DATABASE_PERMISSIONS_ERROR,
             {},
