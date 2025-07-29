@@ -60,7 +60,7 @@ logger = logging.getLogger()
 
 CONNECTION_DATABASE_PERMISSIONS_REGEX = re.compile(
     "Access Denied: Project (?P<project_name>.+?): User does not have "
-    + "datastore.jobs.create permission in project (?P<project>.+?)"
+    + "datastore.databases.create permission in project (?P<project>.+?)"
 )
 
 TABLE_DOES_NOT_EXIST_REGEX = re.compile(
