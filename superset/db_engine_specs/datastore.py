@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 import re
 import urllib
-from datetime import datetime
 from re import Pattern
 from typing import Any, TYPE_CHECKING, TypedDict
 
@@ -28,12 +27,11 @@ from apispec.ext.marshmallow import MarshmallowPlugin
 from flask_babel import gettext as __
 from marshmallow import fields, Schema
 from marshmallow.exceptions import ValidationError
-from sqlalchemy import column, types
+from sqlalchemy import column
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.url import URL
 
-from superset.constants import TimeGrain
 from superset.databases.schemas import EncryptedString
 from superset.databases.utils import make_url_safe
 from superset.db_engine_specs.base import BaseEngineSpec, BasicPropertiesType
@@ -134,42 +132,6 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     """
     arraysize = 5000
 
-    _date_trunc_functions = {
-        "DATE": "DATE_TRUNC",
-        "DATETIME": "DATETIME_TRUNC",
-        "TIME": "TIME_TRUNC",
-        "TIMESTAMP": "TIMESTAMP_TRUNC",
-    }
-
-    _time_grain_expressions = {
-        None: "{col}",
-        TimeGrain.SECOND: "CAST(TIMESTAMP_SECONDS("
-        "UNIX_SECONDS(CAST({col} AS TIMESTAMP))"
-        ") AS {type})",
-        TimeGrain.MINUTE: "CAST(TIMESTAMP_SECONDS("
-        "60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 60)"
-        ") AS {type})",
-        TimeGrain.FIVE_MINUTES: "CAST(TIMESTAMP_SECONDS("
-        "5*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 5*60)"
-        ") AS {type})",
-        TimeGrain.TEN_MINUTES: "CAST(TIMESTAMP_SECONDS("
-        "10*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 10*60)"
-        ") AS {type})",
-        TimeGrain.FIFTEEN_MINUTES: "CAST(TIMESTAMP_SECONDS("
-        "15*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 15*60)"
-        ") AS {type})",
-        TimeGrain.THIRTY_MINUTES: "CAST(TIMESTAMP_SECONDS("
-        "30*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 30*60)"
-        ") AS {type})",
-        TimeGrain.HOUR: "{func}({col}, HOUR)",
-        TimeGrain.DAY: "{func}({col}, DAY)",
-        TimeGrain.WEEK: "{func}({col}, WEEK)",
-        TimeGrain.WEEK_STARTING_MONDAY: "{func}({col}, ISOWEEK)",
-        TimeGrain.MONTH: "{func}({col}, MONTH)",
-        TimeGrain.QUARTER: "{func}({col}, QUARTER)",
-        TimeGrain.YEAR: "{func}({col}, YEAR)",
-    }
-
     custom_errors: dict[Pattern[str], tuple[str, SupersetErrorType, dict[str, Any]]] = {
         CONNECTION_DATABASE_PERMISSIONS_REGEX: (
             __(
@@ -215,22 +177,6 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     }
 
     @classmethod
-    def convert_dttm(
-        cls, target_type: str, dttm: datetime, db_extra: dict[str, Any] | None = None
-    ) -> str | None:
-        # TODO: Datastore doesn't have date time convert expression
-        sqla_type = cls.get_sqla_column_type(target_type)
-        if isinstance(sqla_type, types.Date):
-            return f"CAST('{dttm.date().isoformat()}' AS DATE)"
-        if isinstance(sqla_type, types.TIMESTAMP):
-            return f"""CAST('{dttm.isoformat(timespec="microseconds")}' AS TIMESTAMP)"""
-        if isinstance(sqla_type, types.DateTime):
-            return f"""CAST('{dttm.isoformat(timespec="microseconds")}' AS DATETIME)"""
-        if isinstance(sqla_type, types.Time):
-            return f"""CAST('{dttm.strftime("%H:%M:%S.%f")}' AS TIME)"""
-        return None
-
-    @classmethod
     def fetch_data(cls, cursor: Any, limit: int | None = None) -> list[tuple[Any, ...]]:
         data = super().fetch_data(cursor, limit)
         # Support type Datastore Row, introduced here PR #4071
@@ -238,14 +184,6 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         if data and type(data[0]).__name__ == "Row":
             data = [r.values() for r in data]  # type: ignore
         return data
-
-    @classmethod
-    def epoch_to_dttm(cls) -> str:
-        return "TIMESTAMP_SECONDS({col})"
-
-    @classmethod
-    def epoch_ms_to_dttm(cls) -> str:
-        return "TIMESTAMP_MILLIS({col})"
 
     @classmethod
     def _get_client(cls, engine: Engine, database: Database) -> datastore.Client:
