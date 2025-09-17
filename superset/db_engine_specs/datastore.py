@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import logging
 import re
-import urllib
 from re import Pattern
 from typing import Any, TYPE_CHECKING, TypedDict
+from urllib import parse
 
 from apispec.ext.marshmallow import MarshmallowPlugin
 from flask_babel import gettext as __
@@ -263,10 +263,10 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         encrypted_extra: dict[str, Any] | None = None,
     ) -> str:
         query = parameters.get("query", {})
-        query_params = urllib.parse.urlencode(query)
+        query_params = parse.urlencode(query)
 
         if encrypted_extra:
-            credentials_info = encrypted_extra.get("credentials_info")
+            credentials_info = encrypted_extra.get("credentials_info", {})
             if isinstance(credentials_info, str):
                 credentials_info = json.loads(credentials_info)
             project_id = credentials_info.get("project_id")
