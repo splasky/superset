@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from re import Pattern
 from typing import Any, TYPE_CHECKING, TypedDict
 from urllib import parse
@@ -27,14 +28,16 @@ from apispec.ext.marshmallow import MarshmallowPlugin
 from flask_babel import gettext as __
 from marshmallow import fields, Schema
 from marshmallow.exceptions import ValidationError
-from sqlalchemy import column
+from sqlalchemy import column, types
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.url import URL
+from sqlalchemy.sql import sqltypes
 
 from superset.databases.schemas import EncryptedString
 from superset.databases.utils import make_url_safe
 from superset.db_engine_specs.base import BaseEngineSpec, BasicPropertiesType
+from superset.sql.parse import Table
 from superset.db_engine_specs.exceptions import SupersetDBAPIConnectionError
 from superset.errors import SupersetError, SupersetErrorType
 from superset.exceptions import SupersetException
@@ -174,6 +177,21 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     }
 
     @classmethod
+    def convert_dttm(
+        cls, target_type: str, dttm: datetime, db_extra: dict[str, Any] | None = None
+    ) -> str | None:
+        sqla_type = cls.get_sqla_column_type(target_type)
+        if isinstance(sqla_type, types.Date):
+            return f"CAST('{dttm.date().isoformat()}' AS DATE)"
+        if isinstance(sqla_type, types.TIMESTAMP):
+            return f"""CAST('{dttm.isoformat(timespec="microseconds")}' AS TIMESTAMP)"""
+        if isinstance(sqla_type, types.DateTime):
+            return f"""CAST('{dttm.isoformat(timespec="microseconds")}' AS DATETIME)"""
+        if isinstance(sqla_type, types.Time):
+            return f"""CAST('{dttm.strftime("%H:%M:%S.%f")}' AS TIME)"""
+        return None
+
+    @classmethod
     def fetch_data(cls, cursor: Any, limit: int | None = None) -> list[tuple[Any, ...]]:
         data = super().fetch_data(cursor, limit)
         # Support type Datastore Row, introduced here PR #4071
@@ -307,6 +325,53 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         properties: BasicPropertiesType,  # pylint: disable=unused-argument
     ) -> list[SupersetError]:
         return []
+
+    @classmethod
+    def select_star(  # pylint: disable=too-many-arguments
+        cls,
+        database: Database,
+        table: Table,
+        engine: Engine,
+        limit: int = 100,
+        show_cols: bool = False,
+        indent: bool = True,
+        latest_partition: bool = True,
+        cols: list[ResultSetColumnType] | None = None,
+    ) -> str:
+        """
+        Remove array structures from ``SELECT *``.
+
+        Datastore supports structures and arrays of structures. When loading
+        metadata for a table, each key in the struct is displayed as a separate
+        pseudo-column. When generating the ``SELECT *`` statement we want to
+        remove any keys from structs inside an array, since selecting them
+        results in an error.
+
+        This method removes any array pseudo-columns.
+        """
+        if cols:
+            array_prefixes = {
+                col["column_name"]
+                for col in cols
+                if isinstance(col["type"], sqltypes.ARRAY)
+            }
+            cols = [
+                col
+                for col in cols
+                if "." not in col["column_name"]
+                or col["column_name"].split(".")[0] not in array_prefixes
+            ]
+
+        return super().select_star(
+            database,
+            table,
+            engine,
+            limit,
+            show_cols,
+            indent,
+            latest_partition,
+            cols,
+        )
 
     @classmethod
     def _get_fields(cls, cols: list[ResultSetColumnType]) -> list[Any]:

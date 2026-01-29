@@ -81,8 +81,8 @@ def test_get_fields() -> None:
 
     query = select(fields)
     assert str(query.compile(dialect=CloudDatastoreDialect())) == (
-        "SELECT `limit` AS `limit`, `name` AS `name`, "
-        "`project`.`name` AS `project__name`"
+        'SELECT "limit" AS "limit", name AS name, '
+        '"project.name" AS project__name'
     )
 
 
@@ -171,8 +171,8 @@ def test_select_star(mocker: MockerFixture) -> None:
     assert (
         sql
         == """SELECT
-  `trailer` AS `trailer`
-FROM `my_table`
+  trailer AS trailer
+FROM my_table
 LIMIT 100"""
     )
 
