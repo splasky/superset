@@ -34,16 +34,18 @@ from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.url import URL
 from sqlalchemy.sql import sqltypes
 
+from superset.constants import TimeGrain
 from superset.databases.schemas import EncryptedString
 from superset.databases.utils import make_url_safe
 from superset.db_engine_specs.base import BaseEngineSpec, BasicPropertiesType
-from superset.sql.parse import Table
 from superset.db_engine_specs.exceptions import SupersetDBAPIConnectionError
 from superset.errors import SupersetError, SupersetErrorType
 from superset.exceptions import SupersetException
 from superset.models.core import Database
+from superset.sql.parse import Table
 from superset.superset_typing import ResultSetColumnType
 from superset.utils import json
+from superset.utils.hashing import hash_from_str
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,42 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     """
     arraysize = 5000
 
+    _date_trunc_functions = {
+        "DATE": "DATE_TRUNC",
+        "DATETIME": "DATETIME_TRUNC",
+        "TIME": "TIME_TRUNC",
+        "TIMESTAMP": "TIMESTAMP_TRUNC",
+    }
+
+    _time_grain_expressions = {
+        None: "{col}",
+        TimeGrain.SECOND: "CAST(TIMESTAMP_SECONDS("
+        "UNIX_SECONDS(CAST({col} AS TIMESTAMP))"
+        ") AS {type})",
+        TimeGrain.MINUTE: "CAST(TIMESTAMP_SECONDS("
+        "60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 60)"
+        ") AS {type})",
+        TimeGrain.FIVE_MINUTES: "CAST(TIMESTAMP_SECONDS("
+        "5*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 5*60)"
+        ") AS {type})",
+        TimeGrain.TEN_MINUTES: "CAST(TIMESTAMP_SECONDS("
+        "10*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 10*60)"
+        ") AS {type})",
+        TimeGrain.FIFTEEN_MINUTES: "CAST(TIMESTAMP_SECONDS("
+        "15*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 15*60)"
+        ") AS {type})",
+        TimeGrain.THIRTY_MINUTES: "CAST(TIMESTAMP_SECONDS("
+        "30*60 * DIV(UNIX_SECONDS(CAST({col} AS TIMESTAMP)), 30*60)"
+        ") AS {type})",
+        TimeGrain.HOUR: "{func}({col}, HOUR)",
+        TimeGrain.DAY: "{func}({col}, DAY)",
+        TimeGrain.WEEK: "{func}({col}, WEEK)",
+        TimeGrain.WEEK_STARTING_MONDAY: "{func}({col}, ISOWEEK)",
+        TimeGrain.MONTH: "{func}({col}, MONTH)",
+        TimeGrain.QUARTER: "{func}({col}, QUARTER)",
+        TimeGrain.YEAR: "{func}({col}, YEAR)",
+    }
+
     custom_errors: dict[Pattern[str], tuple[str, SupersetErrorType, dict[str, Any]]] = {
         CONNECTION_DATABASE_PERMISSIONS_REGEX: (
             __(
@@ -175,6 +213,42 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
             {},
         ),
     }
+
+    @staticmethod
+    def _mutate_label(label: str) -> str:
+        """
+        Datastore field_name should start with a letter or underscore and contain
+        only alphanumeric characters. Labels that start with a number are prefixed
+        with an underscore. Any unsupported characters are replaced with underscores
+        and an md5 hash is added to the end of the label to avoid possible
+        collisions.
+
+        :param label: Expected expression label
+        :return: Conditionally mutated label
+        """
+        label_hashed = "_" + hash_from_str(label)
+
+        # if label starts with number, add underscore as first character
+        label_mutated = "_" + label if re.match(r"^\d", label) else label
+
+        # replace non-alphanumeric characters with underscores
+        label_mutated = re.sub(r"[^\w]+", "_", label_mutated)
+        if label_mutated != label:
+            # add first 5 chars from md5 hash to label to avoid possible collisions
+            label_mutated += label_hashed[:6]
+
+        return label_mutated
+
+    @classmethod
+    def _truncate_label(cls, label: str) -> str:
+        """Datastore requires column names start with either a letter or
+        underscore. To make sure this is always the case, an underscore is prefixed
+        to the md5 hash of the original label.
+
+        :param label: expected expression label
+        :return: truncated label
+        """
+        return "_" + hash_from_str(label)
 
     @classmethod
     def convert_dttm(
