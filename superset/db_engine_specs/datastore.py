@@ -160,6 +160,11 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
                 },
             },
         ],
+        "notes": (
+            "Create a Service Account via GCP console with access to "
+            "datastore datasets."
+        ),
+        "docs_url": "https://github.com/splasky/Python-datastore-sqlalchemy",
     }
 
     # Datastore doesn't maintain context when running multiple statements in the
