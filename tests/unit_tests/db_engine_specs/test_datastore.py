@@ -493,3 +493,17 @@ def test_adjust_engine_params_no_catalog() -> None:
         catalog="other-project",
     )[0]
     assert str(uri) == "datastore://other-project/"
+
+
+def test_parameters_json_schema_has_encrypted_extra() -> None:
+    """
+    Test that ``parameters_json_schema`` marks ``credentials_info`` with
+    ``x-encrypted-extra`` so the frontend moves credentials into
+    ``masked_encrypted_extra``.
+    """
+    from superset.db_engine_specs.datastore import DatastoreEngineSpec
+
+    schema = DatastoreEngineSpec.parameters_json_schema()
+    assert schema is not None
+    credentials_info = schema["properties"]["credentials_info"]
+    assert credentials_info["x-encrypted-extra"] is True

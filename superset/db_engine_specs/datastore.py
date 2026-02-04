@@ -24,6 +24,7 @@ from re import Pattern
 from typing import Any, TYPE_CHECKING, TypedDict
 from urllib import parse
 
+from apispec import APISpec
 from apispec.ext.marshmallow import MarshmallowPlugin
 from flask_babel import gettext as __
 from marshmallow import fields, Schema
@@ -35,7 +36,7 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.sql import sqltypes
 
 from superset.constants import TimeGrain
-from superset.databases.schemas import EncryptedString
+from superset.databases.schemas import encrypted_field_properties, EncryptedString
 from superset.databases.utils import make_url_safe
 from superset.db_engine_specs.base import (
     BaseEngineSpec,
@@ -450,6 +451,26 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
         properties: BasicPropertiesType,  # pylint: disable=unused-argument
     ) -> list[SupersetError]:
         return []
+
+    @classmethod
+    def parameters_json_schema(cls) -> Any:
+        """
+        Return configuration parameters as OpenAPI.
+        """
+        if not cls.parameters_schema:
+            return None
+
+        spec = APISpec(
+            title="Database Parameters",
+            version="1.0.0",
+            openapi_version="3.0.0",
+            plugins=[ma_plugin],
+        )
+
+        ma_plugin.init_spec(spec)
+        ma_plugin.converter.add_attribute_function(encrypted_field_properties)
+        spec.components.schema(cls.__name__, schema=cls.parameters_schema)
+        return spec.to_dict()["components"]["schemas"][cls.__name__]
 
     @classmethod
     def select_star(  # pylint: disable=too-many-arguments
