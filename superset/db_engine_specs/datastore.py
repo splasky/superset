@@ -64,6 +64,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from superset.models.core import Database  # pragma: no cover
+    from superset.models.sql_lab import Query  # pragma: no cover
 
 logger = logging.getLogger()
 
@@ -522,6 +523,24 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
             column(c["column_name"]).label(c["column_name"].replace(".", "__"))
             for c in cols
         ]
+
+    @classmethod
+    def execute_with_cursor(
+        cls,
+        cursor: Any,
+        sql: str,
+        query: Query,
+    ) -> None:
+        """Execute query and capture any warnings from the cursor.
+
+        The Datastore DBAPI cursor collects warnings when a query falls
+        back to fetching all entities client-side (SELECT * mode) due to
+        missing indexes. These warnings are stored in the query's
+        extra_json so they can be surfaced to the user in the UI.
+        """
+        super().execute_with_cursor(cursor, sql, query)
+        if hasattr(cursor, "warnings") and cursor.warnings:
+            query.set_extra_json_key("warnings", cursor.warnings)
 
     @classmethod
     def parse_error_exception(cls, exception: Exception) -> Exception:
