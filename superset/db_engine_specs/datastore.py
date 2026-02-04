@@ -42,12 +42,11 @@ from superset.db_engine_specs.base import (
     BasicPropertiesType,
     DatabaseCategory,
 )
-from superset.sql.parse import LimitMethod
 from superset.db_engine_specs.exceptions import SupersetDBAPIConnectionError
 from superset.errors import SupersetError, SupersetErrorType
 from superset.exceptions import SupersetException
 from superset.models.core import Database
-from superset.sql.parse import Table
+from superset.sql.parse import LimitMethod, Table
 from superset.superset_typing import ResultSetColumnType
 from superset.utils import json
 from superset.utils.hashing import hash_from_str
