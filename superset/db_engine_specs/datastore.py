@@ -37,7 +37,12 @@ from sqlalchemy.sql import sqltypes
 from superset.constants import TimeGrain
 from superset.databases.schemas import EncryptedString
 from superset.databases.utils import make_url_safe
-from superset.db_engine_specs.base import BaseEngineSpec, BasicPropertiesType
+from superset.db_engine_specs.base import (
+    BaseEngineSpec,
+    BasicPropertiesType,
+    DatabaseCategory,
+)
+from superset.sql.parse import LimitMethod
 from superset.db_engine_specs.exceptions import SupersetDBAPIConnectionError
 from superset.errors import SupersetError, SupersetErrorType
 from superset.exceptions import SupersetException
@@ -115,6 +120,47 @@ class DatastoreEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-me
     parameters_schema = DatastoreParametersSchema()
     default_driver = "datastore"
     sqlalchemy_uri_placeholder = "datastore://{project_id}"
+
+    # Use FETCH_MANY to prevent Superset from injecting LIMIT via sqlglot AST
+    # manipulation. GQL queries should not be modified by sqlglot since it
+    # uses BigQuery dialect which transforms GQL-incompatible syntax.
+    limit_method = LimitMethod.FETCH_MANY
+
+    metadata = {
+        "description": (
+            "Google Cloud Datastore is a highly scalable NoSQL database "
+            "for your applications."
+        ),
+        "logo": "google-biquery.png",
+        "homepage_url": "https://cloud.google.com/datastore/",
+        "categories": [
+            DatabaseCategory.CLOUD_GCP,
+            DatabaseCategory.PROPRIETARY,
+        ],
+        "pypi_packages": ["python-datastore-sqlalchemy"],
+        "connection_string": "datastore://{project_id}",
+        "authentication_methods": [
+            {
+                "name": "Service Account JSON",
+                "description": (
+                    "Upload service account credentials JSON"
+                    " or paste in Secure Extra"
+                ),
+                "secure_extra": {
+                    "credentials_info": {
+                        "type": "service_account",
+                        "project_id": "...",
+                        "private_key_id": "...",
+                        "private_key": "...",
+                        "client_email": "...",
+                        "client_id": "...",
+                        "auth_uri": "...",
+                        "token_uri": "...",
+                    }
+                },
+            },
+        ],
+    }
 
     # Datastore doesn't maintain context when running multiple statements in the
     # same cursor, so we need to run all statements at once
