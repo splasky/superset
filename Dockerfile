@@ -208,9 +208,11 @@ RUN /app/docker/apt-install.sh \
 RUN mkdir -p /app/data && chown -R superset:superset /app/data
 
 # Copy compiled things from previous stages
-COPY --from=superset-node /app/superset/static/assets superset/static/assets
-# Copy service.worker.js optionall as it doesn't exist when DEV_MODE=true
-COPY --from=superset-node /app/superset/static/service-worker.j[s] superset/static/service-worker.js
+# NOTE: when DEV_MODE=true the frontend build is skipped, so the assets dir is
+# empty and service-worker.js may not exist. A directory-level copy works for
+# both cases, whereas the previous `service-worker.j[s]` glob trick is rejected
+# by buildah when the file does not exist.
+COPY --from=superset-node /app/superset/static/ superset/static/
 
 # TODO, when the next version comes out, use --exclude superset/translations
 COPY superset superset
