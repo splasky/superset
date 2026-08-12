@@ -135,6 +135,15 @@ WEBDRIVER_BASEURL_USER_FRIENDLY = (
 )
 SQLLAB_CTAS_NO_LIMIT = True
 
+# Override the default map tiles so only OpenStreetMap tiles are available.
+# Setting DECKGL_BASE_MAP overwrites the default values (OSM + Mapbox) entirely.
+# The OSM tile URLs are already allowed by the default CORS_OPTIONS and the
+# "connect-src" of TALISMAN_CONFIG, so no additional CORS/CSP change is needed.
+DECKGL_BASE_MAP = [
+    ["https://tile.openstreetmap.org/{z}/{x}/{y}.png", "Streets (OSM)"],
+    ["https://tile.osm.ch/osm-swiss-style/{z}/{x}/{y}.png", "Topography (OSM)"],
+]
+
 log_level_text = os.getenv("SUPERSET_LOG_LEVEL", "INFO")
 LOG_LEVEL = getattr(logging, log_level_text.upper(), logging.INFO)
 
