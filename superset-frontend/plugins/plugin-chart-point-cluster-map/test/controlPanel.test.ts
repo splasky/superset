@@ -64,9 +64,18 @@ type RendererControlConfig = ControlConfig & {
   };
 };
 
-const setBootstrap = (conf: Record<string, unknown>) => {
+const setBootstrap = ({
+  conf = {},
+  deckglTiles,
+}: {
+  conf?: Record<string, unknown>;
+  deckglTiles?: unknown;
+}) => {
   document.body.innerHTML = `<div id="app" data-bootstrap='${JSON.stringify({
-    common: { conf },
+    common: {
+      conf,
+      ...(deckglTiles === undefined ? {} : { deckgl_tiles: deckglTiles }),
+    },
   })}'></div>`;
 };
 
@@ -109,8 +118,49 @@ test('MapLibre style choices expose Streets (OSM)', () => {
   ).toContainEqual([OSM_TILE_STYLE_URL, 'Streets (OSM)']);
 });
 
+type MapLibreStyleControlConfig = ControlConfig & {
+  mapStateToProps: () => {
+    choices: unknown;
+    default: unknown;
+  };
+};
+
+const getMapLibreStyleProps = () =>
+  (
+    getControl(controlPanel, 'maplibre_style')
+      .config as MapLibreStyleControlConfig
+  ).mapStateToProps();
+
+test('MapLibre style defaults to configured deck.gl tile override', () => {
+  setBootstrap({
+    deckglTiles: [['https://map.hyserver.homelab/style/osm.json', 'Maplibre']],
+  });
+
+  const props = getMapLibreStyleProps();
+
+  expect(props.choices).toEqual([
+    ['https://map.hyserver.homelab/style/osm.json', 'Maplibre'],
+  ]);
+  expect(props.default).toBe('https://map.hyserver.homelab/style/osm.json');
+});
+
+test('MapLibre style falls back to built-in choices for malformed overrides', () => {
+  setBootstrap({
+    deckglTiles: [
+      ['https://tiles.example.com/{z}/{x}/{y}.png'],
+      ['https://tiles.example.com/{z}/{x}/{y}.png', 'Custom', 'Extra'],
+      ['', 'Empty URL'],
+    ],
+  });
+
+  const props = getMapLibreStyleProps();
+
+  expect(props.choices).toContainEqual([OSM_TILE_STYLE_URL, 'Streets (OSM)']);
+  expect(props.default).toBe('https://tiles.openfreemap.org/styles/liberty');
+});
+
 test('map renderer hides Mapbox when no key exists for new selections', () => {
-  setBootstrap({});
+  setBootstrap({ conf: {} });
 
   const props = getMapRendererProps('maplibre');
 
@@ -120,7 +170,7 @@ test('map renderer hides Mapbox when no key exists for new selections', () => {
 });
 
 test('map renderer keeps saved Mapbox visible while disabled without a key', () => {
-  setBootstrap({});
+  setBootstrap({ conf: {} });
 
   const props = getMapRendererProps('mapbox');
 
@@ -132,7 +182,7 @@ test('map renderer keeps saved Mapbox visible while disabled without a key', () 
 });
 
 test('map renderer enables Mapbox when a key exists', () => {
-  setBootstrap({ MAPBOX_API_KEY: 'pk.test' });
+  setBootstrap({ conf: { MAPBOX_API_KEY: 'pk.test' } });
 
   const props = getMapRendererProps('maplibre');
 
@@ -150,15 +200,17 @@ test('map renderer keeps the original explanatory description', () => {
 
 test('map renderer defaults to configured Mapbox when a key exists', () => {
   setBootstrap({
-    DEFAULT_MAP_RENDERER: 'mapbox',
-    MAPBOX_API_KEY: 'pk.test',
+    conf: {
+      DEFAULT_MAP_RENDERER: 'mapbox',
+      MAPBOX_API_KEY: 'pk.test',
+    },
   });
 
   expect(getMapRendererProps('maplibre').default).toBe('mapbox');
 });
 
 test('map renderer falls back from configured Mapbox default without a key', () => {
-  setBootstrap({ DEFAULT_MAP_RENDERER: 'mapbox' });
+  setBootstrap({ conf: { DEFAULT_MAP_RENDERER: 'mapbox' } });
 
   expect(getMapRendererProps('maplibre').default).toBe('maplibre');
 });

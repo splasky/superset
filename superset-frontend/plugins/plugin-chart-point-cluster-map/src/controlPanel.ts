@@ -29,6 +29,7 @@ import type { QueryFormData } from '@superset-ui/core';
 import type { MapProvider } from '@superset-ui/core/utils/mapStyles';
 import { getDefaultMapRenderer } from '@superset-ui/core/utils/mapStyles';
 import {
+  getPointClusterMapLibreStyleProps,
   getPointClusterMapRendererProps,
   POINT_CLUSTER_MAPLIBRE_STYLE_CHOICES,
 } from './utils/mapControls';
@@ -237,13 +238,14 @@ const config: ControlPanelConfig = {
               renderTrigger: true,
               freeForm: true,
               choices: POINT_CLUSTER_MAPLIBRE_STYLE_CHOICES,
-              default: 'https://tiles.openfreemap.org/styles/liberty',
+              default: POINT_CLUSTER_MAPLIBRE_STYLE_CHOICES[0][0],
               description: t(
                 'Base layer map style. See MapLibre documentation: %s',
                 'https://maplibre.org/maplibre-style-spec/',
               ),
               visibility: ({ controls }: MapStyleVisibilityProps) =>
                 controls?.map_renderer?.value !== 'mapbox',
+              mapStateToProps: getPointClusterMapLibreStyleProps,
             },
           },
         ],

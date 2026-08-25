@@ -140,6 +140,7 @@ SQLLAB_CTAS_NO_LIMIT = True
 # The OSM tile URLs are already allowed by the default CORS_OPTIONS and the
 # "connect-src" of TALISMAN_CONFIG, so no additional CORS/CSP change is needed.
 DECKGL_BASE_MAP = [
+    ["https://map.hyserver.homelab/style/osm.json", "Maplibre"],
     ["https://tile.openstreetmap.org/{z}/{x}/{y}.png", "Streets (OSM)"],
     ["https://tile.osm.ch/osm-swiss-style/{z}/{x}/{y}.png", "Topography (OSM)"],
 ]

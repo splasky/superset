@@ -1455,6 +1455,7 @@ NATIVE_FILTER_OPTIONS_CACHE_TIMEOUT: int | None = None
 ENABLE_CORS = True
 CORS_OPTIONS: dict[Any, Any] = {
     "origins": [
+        "https://map.hyserver.homelab",
         "https://tile.openstreetmap.org",
         "https://tile.osm.ch",
     ],
@@ -2723,6 +2724,7 @@ TALISMAN_CONFIG = {
             "data:",
             "https://apachesuperset.gateway.scarf.sh",
             "https://static.scarf.sh/",
+            "https://map.hyserver.homelab",
             # "https://cdn.brandfolder.io", # Uncomment when SLACK_ENABLE_AVATARS is True  # noqa: E501
             "ows.terrestris.de",
             "https://cdn.document360.io",
@@ -2730,6 +2732,7 @@ TALISMAN_CONFIG = {
         "worker-src": ["'self'", "blob:"],
         "connect-src": [
             "'self'",
+            "https://map.hyserver.homelab",
             "https://api.mapbox.com",
             "https://events.mapbox.com",
             "https://tile.openstreetmap.org",
@@ -2751,6 +2754,7 @@ TALISMAN_CONFIG = {
         ],
         "font-src": [
             "'self'",
+            "https://map.hyserver.homelab",
             *[f"https://{d}" for d in THEME_FONT_URL_ALLOWED_DOMAINS],
         ],
         "script-src": ["'self'", "'strict-dynamic'"],
@@ -2770,6 +2774,7 @@ TALISMAN_DEV_CONFIG = {
             "data:",
             "https://apachesuperset.gateway.scarf.sh",
             "https://static.scarf.sh/",
+            "https://map.hyserver.homelab",
             "https://cdn.brandfolder.io",
             "ows.terrestris.de",
             "https://cdn.document360.io",
@@ -2777,6 +2782,7 @@ TALISMAN_DEV_CONFIG = {
         "worker-src": ["'self'", "blob:"],
         "connect-src": [
             "'self'",
+            "https://map.hyserver.homelab",
             "https://api.mapbox.com",
             "https://events.mapbox.com",
             "https://tile.openstreetmap.org",
@@ -2798,6 +2804,7 @@ TALISMAN_DEV_CONFIG = {
         ],
         "font-src": [
             "'self'",
+            "https://map.hyserver.homelab",
             *[f"https://{d}" for d in THEME_FONT_URL_ALLOWED_DOMAINS],
         ],
         "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
